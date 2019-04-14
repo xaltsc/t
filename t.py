@@ -7,6 +7,8 @@ from __future__ import with_statement, print_function
 import os, re, sys, hashlib
 from operator import itemgetter
 from optparse import OptionParser, OptionGroup
+import random
+from colored import bg, attr, fg
 
 
 class InvalidTaskfile(Exception):
@@ -41,6 +43,15 @@ def _hash(text):
     """
     return hashlib.sha1(text.encode('utf-8')).hexdigest()
 
+def _get_category(tasktext):
+    """Returns a task with its category if it has one."""
+    catg, _, _ = tasktext.rpartition(':')
+    task = {'text': tasktext.strip()}
+    if catg.isalnum():
+        task['category'] = catg.strip()
+
+    return task
+
 def _task_from_taskline(taskline):
     """Parse a taskline (from a task file) and return a task.
 
@@ -62,13 +73,14 @@ def _task_from_taskline(taskline):
         return None
     elif '|' in taskline:
         text, _, meta = taskline.rpartition('|')
-        task = { 'text': text.strip() }
+        task = _get_category(text)
         for piece in meta.strip().split(','):
             label, data = piece.split(':')
             task[label.strip()] = data.strip()
     else:
         text = taskline.strip()
-        task = { 'id': _hash(text), 'text': text }
+        task = _get_category(text)
+        task['id'] = _hash(text)
     return task
 
 def _tasklines_from_tasks(tasks):
@@ -121,6 +133,9 @@ def _prefixes(ids):
         del ps['']
     return ps
 
+def _randcolor():
+    return bg(random.choice(range(1,16))) +fg(0)
+
 
 class TaskDict(object):
     """A set of tasks, both finished and unfinished, for a given list.
@@ -133,6 +148,7 @@ class TaskDict(object):
         """Initialize by reading the task files, if they exist."""
         self.tasks = {}
         self.done = {}
+        self.categories = {}
         self.name = name
         self.taskdir = taskdir
         filemap = (('tasks', self.name), ('done', '.%s.done' % self.name))
@@ -148,6 +164,10 @@ class TaskDict(object):
                         for task in tasks:
                             if task is not None:
                                 getattr(self, kind)[task['id']] = task
+                                if "category" in task:
+                                    if not task["category"] in self.categories:
+                                        self.categories[task["category"]] = _randcolor()
+
                 except IOError as e:
                     raise BadFile(path, e.strerror)
 
@@ -230,7 +250,8 @@ class TaskDict(object):
         for _, task in sorted(tasks.items()):
             if grep.lower() in task['text'].lower():
                 p = '%s - ' % task[label].ljust(plen) if not quiet else ''
-                print(p + task['text'])
+                s = (self.categories[task['category']] + task['category'] + attr('reset') + task['text'][len(task['category']):]) if "category" in task else task['text']
+                print(p + s)
 
     def write(self, delete_if_empty=False):
         """Flush the finished and unfinished tasks to the files on disk."""
